@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Iconify Icons</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <link rel="stylesheet" href="taskpane.css" />
+</head>
+<body>
+  <header>
+    <input id="q" type="search" placeholder="Search icons (e.g. battery, factory)" autocomplete="off" aria-label="Search icons" />
+    <div class="row">
+      <select id="set" aria-label="Icon set">
+        <option value="curated" selected>Curated (single-colour sets)</option>
+        <option value="material-symbols">Material Symbols</option>
+        <option value="lucide">Lucide</option>
+        <option value="tabler">Tabler</option>
+        <option value="ph">Phosphor</option>
+        <option value="bi">Bootstrap Icons</option>
+        <option value="heroicons">Heroicons</option>
+        <option value="all">All sets (incl. multi-colour)</option>
+      </select>
+      <label class="color" title="Icon colour">
+        <input id="color" type="color" value="#000000" aria-label="Icon colour" />
+      </label>
+    </div>
+  </header>
+  <p id="status" role="status" aria-live="polite">Type a keyword to find icons.</p>
+  <main id="grid"></main>
+  <button id="more" hidden>Load more</button>
+  <script src="taskpane.js"></script>
+</body>
+</html>
