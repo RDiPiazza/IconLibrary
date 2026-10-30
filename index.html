@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Iconify Icons</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <link rel="stylesheet" href="taskpane.css?v=3" />
+  <link rel="stylesheet" href="taskpane.css?v=5" />
 </head>
 <body>
   <header>
-    <input id="q" type="search" placeholder="Search icons (e.g. battery, factory)" autocomplete="off" aria-label="Search icons" />
+    <input id="q" type="search" placeholder="Search icons (English or French)" autocomplete="off" aria-label="Search icons" />
     <div class="row">
       <select id="set" aria-label="Icon set">
         <option value="curated" selected>Curated (single-colour sets)</option>
@@ -25,10 +25,12 @@
         <input id="color" type="color" value="#000000" aria-label="Icon colour" />
       </label>
     </div>
+    <label class="opt"><input type="checkbox" id="hidevar" checked /> Hide style variants (one icon per set)</label>
   </header>
   <p id="status" role="status" aria-live="polite">Type a keyword to find icons.</p>
   <main id="grid"></main>
   <button id="more" hidden>Load more</button>
-  <script src="taskpane.js?v=3"></script>
+  <script src="search-utils.js?v=5"></script>
+  <script src="taskpane.js?v=5"></script>
 </body>
 </html>
