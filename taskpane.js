@@ -6,7 +6,7 @@ const FALLBACK_BELOW = 12; // curated results under this count also search every
 
 const U = window.SearchUtils;
 const $ = (id) => document.getElementById(id);
-const grid = $('grid'), statusEl = $('status'), moreBtn = $('more'), input = $('q'), setSel = $('set'), colorIn = $('color'), hideVar = $('hidevar');
+const grid = $('grid'), statusEl = $('status'), moreBtn = $('more'), input = $('q'), colorIn = $('color');
 let currentKey = '', timer, results = [], shown = 0, lastMerged = [], lastExtra = [], lastGroups = [], lastNote = '', lastQuery = '';
 const collections = {};     // prefix -> {name, license, author}
 const iconData = new Map(); // 'prefix:name' -> {body, width, height}
@@ -18,12 +18,6 @@ const thumbColor = dark ? '#f0f0f0' : '#242424';
 function setStatus(msg, isError = false) {
   statusEl.textContent = msg;
   statusEl.classList.toggle('error', isError);
-}
-
-function prefixesFor(choice) {
-  if (choice === 'curated') return CURATED;
-  if (choice === 'all') return '';
-  return choice;
 }
 
 function splitName(full) {
@@ -84,8 +78,7 @@ async function fetchSearch(q, prefixes) {
 
 async function search() {
   const q = input.value.trim();
-  const sets = setSel.value;
-  const key = q + '|' + sets;
+  const key = q;
   currentKey = key;
   grid.innerHTML = ''; results = []; shown = 0; moreBtn.hidden = true;
   if (!q) { setStatus('Type a keyword (English or French) to find icons.'); return; }
@@ -93,7 +86,7 @@ async function search() {
   if (!queries.length) { setStatus('Type a keyword (English or French) to find icons.'); return; }
   setStatus('Searching…');
   try {
-    const settled = await Promise.allSettled(queries.map((qq) => fetchSearch(qq, prefixesFor(sets))));
+    const settled = await Promise.allSettled(queries.map((qq) => fetchSearch(qq, CURATED)));
     if (key !== currentKey) return; // a newer search replaced this one
     const ok = settled.filter((s) => s.status === 'fulfilled').map((s) => s.value);
     if (!ok.length) throw settled[0].reason;
@@ -103,14 +96,14 @@ async function search() {
     lastNote = queries.length > 1 ? `Also searched: ${queries.slice(1).join(', ')}. ` : '';
     // Like iconify.design, fall back to every set when the curated ones have little; 'palette:false'
     // keeps it to single-colour icons. Shown after the curated results.
-    if (sets === 'curated' && lastMerged.length < FALLBACK_BELOW) {
+    if (lastMerged.length < FALLBACK_BELOW) {
       const more = await Promise.allSettled(queries.map((qq) => fetchSearch(qq + ' palette:false', '')));
       if (key !== currentKey) return;
       more.forEach((s) => { if (s.status === 'fulfilled') Object.assign(collections, s.value.collections || {}); });
       const inCurated = new Set(lastMerged.map((m) => m.id));
       lastExtra = U.mergeResults(more.map((s) => (s.status === 'fulfilled' ? s.value.icons || [] : [])))
         .filter((m) => !inCurated.has(m.id));
-      if (lastExtra.length) lastNote += 'Few curated matches; also showing other single-colour sets. ';
+      if (lastExtra.length) lastNote += 'Few matches in the main sets; also showing other icon sets. ';
     }
     lastGroups = groups;
     lastQuery = q;
@@ -122,7 +115,7 @@ async function search() {
 
 async function render() {
   grid.innerHTML = '';
-  const opts = { hideVariants: hideVar.checked };
+  const opts = { hideVariants: true };
   results = U.rank(lastMerged, lastGroups, opts).concat(U.rank(lastExtra, lastGroups, opts));
   shown = 0;
   if (!results.length) {
@@ -252,7 +245,5 @@ async function insertIcon(full, tile) {
 
 Office.onReady(() => {
   input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 350); });
-  setSel.addEventListener('change', search);
-  hideVar.addEventListener('change', () => { if (lastMerged.length) render(); });
   moreBtn.addEventListener('click', showMore);
 });
