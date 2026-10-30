@@ -15,9 +15,12 @@ input[type=search], select { width: 100%; padding: 8px 10px; font: inherit; colo
 input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #status { margin: 4px 0 10px; color: var(--muted); font-size: 12px; min-height: 1.4em; }
 #status.error { color: #c50f1f; }
-#grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.icon { aspect-ratio: 1; padding: 12px; background: var(--tile); border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+#grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.icon { min-width: 0; overflow: hidden; aspect-ratio: 1; padding: 12px; background: var(--tile); border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
 .icon:hover { border-color: var(--accent); }
 .icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .icon.busy { opacity: .5; pointer-events: none; }
 #more { display: block; margin: 12px auto 0; padding: 6px 14px; font: inherit; color: var(--accent); background: none; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+
+.opt { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.opt input { margin: 0; }
