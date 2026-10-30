@@ -87,9 +87,9 @@ async function search() {
   const key = q;
   currentKey = key;
   grid.innerHTML = ''; results = []; shown = 0; moreBtn.hidden = true;
-  if (!q) { setStatus('Type a keyword (English or French) to find icons.'); return; }
+  if (!q) { setStatus('Type a keyword in English to find icons, e.g. battery, solar panel, factory.'); return; }
   const { queries, groups } = U.expandQuery(q);
-  if (!queries.length) { setStatus('Type a keyword (English or French) to find icons.'); return; }
+  if (!queries.length) { setStatus('Type a keyword in English to find icons, e.g. battery, solar panel, factory.'); return; }
   setStatus('Searching…');
   try {
     const settled = await Promise.allSettled(queries.map((qq) => fetchSearch(qq, CURATED)));
