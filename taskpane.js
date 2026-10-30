@@ -52,18 +52,39 @@ function splitName(full) {
   return { prefix: full.slice(0, i), name: full.slice(i + 1) };
 }
 
+const thumbCache = new Map();
+
+// Thumbnails are downloaded with fetch() (same path as the search call, which works inside
+// PowerPoint) and shown as data URLs, instead of letting <img> load a cross-origin URL.
+async function loadThumb(img, prefix, name) {
+  const url = `${API}/${prefix}/${name}.svg?height=64&color=${encodeURIComponent(thumbColor)}`;
+  try {
+    let svg = thumbCache.get(url);
+    if (!svg) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      svg = await r.text();
+      thumbCache.set(url, svg);
+    }
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  } catch (e) {
+    img.removeAttribute('src');
+    img.alt = '!';
+    img.title = 'Preview failed: ' + e.message;
+  }
+}
+
 function addTile(full) {
   const { prefix, name } = splitName(full);
   const b = document.createElement('button');
   b.className = 'icon';
   b.title = full;
   const img = document.createElement('img');
-  img.alt = full;
-  img.loading = 'lazy';
-  img.src = `${API}/${prefix}/${name}.svg?height=64&color=${encodeURIComponent(thumbColor)}`;
+  img.alt = '';
   b.appendChild(img);
   b.addEventListener('click', () => insertIcon(full, b));
   grid.appendChild(b);
+  loadThumb(img, prefix, name);
 }
 
 async function insertIcon(full, tile) {
