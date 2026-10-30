@@ -20,8 +20,9 @@
     people: ['users', 'group', 'team', 'person'], person: ['user'], user: ['person'], team: ['users', 'group'],
     energy: ['bolt', 'lightning', 'power'], power: ['bolt', 'plug'], electricity: ['bolt', 'plug'],
     wind: ['turbine', 'windmill'], factory: ['industry'], money: ['coin', 'cash'], idea: ['lightbulb'],
+    ai: ['artificial-intelligence', 'robot'], robot: ['bot', 'ai'], brain: ['ai'],
     // French
-    usine: ['factory', 'industry'], voiture: ['car', 'vehicle'], auto: ['car'], vehicule: ['vehicle', 'car'],
+    ia: ['ai', 'robot', 'brain'], cerveau: ['brain'], intelligence: ['ai', 'brain'], usine: ['factory', 'industry'], voiture: ['car', 'vehicle'], auto: ['car'], vehicule: ['vehicle', 'car'],
     camion: ['truck'], feuille: ['leaf', 'plant'], plante: ['plant', 'leaf'], arbre: ['tree'],
     bouclier: ['shield', 'protection'], soleil: ['sun'], solaire: ['solar', 'solar-panel', 'sun'],
     panneau: ['panel', 'sign'], eolienne: ['wind-turbine', 'turbine', 'windmill'], vent: ['wind'],
@@ -55,6 +56,19 @@
     outil: ['tool', 'wrench'], outils: ['tools', 'wrench'], graphiques: ['chart', 'graph'],
   };
 
+  // Multi-word phrases (accent-stripped, space-joined) that icon names don't spell out.
+  const PHRASES = {
+    'artificial intelligence': ['ai', 'artificial-intelligence', 'robot', 'brain'],
+    'intelligence artificielle': ['ai', 'artificial-intelligence', 'robot', 'brain'],
+    'machine learning': ['ai', 'brain', 'neural'], 'apprentissage automatique': ['ai', 'brain'],
+    'wind turbine': ['wind-turbine', 'windmill'], 'solar panel': ['solar-panel', 'solar-power'],
+    'panneau solaire': ['solar-panel', 'solar-power'], 'panneaux solaires': ['solar-panel', 'solar-power'],
+    'electric car': ['car-electric', 'ev', 'electric-car'], 'voiture electrique': ['car-electric', 'ev', 'electric-car'],
+    'charging station': ['ev-station', 'charging-station', 'ev-charger'],
+    'borne de recharge': ['ev-station', 'charging-station', 'ev-charger'],
+    'energie renouvelable': ['renewable', 'solar-panel', 'wind-turbine'], 'renewable energy': ['renewable', 'solar-panel', 'wind-turbine'],
+  };
+
   const VARIANT = new Set(['outline', 'outlined', 'fill', 'filled', 'line', 'bold', 'thin', 'light', 'regular',
     'duotone', 'solid', 'sharp', 'rounded', 'linear', 'twotone', 'round', 'medium']);
 
@@ -69,6 +83,12 @@
     let queries = [primary];
     const groups = [];
     let known = false;
+    const phrase = PHRASES[primary] || PHRASES[ws.map(singular).join(' ')];
+    if (phrase) {
+      const ex = phrase.slice(0, 3);
+      groups.push([{ term: ws.join('-'), weight: 1 }, ...ex.map((t, i) => ({ term: t, weight: 0.9 - i * 0.05 }))]);
+      return { queries: uniq([primary, ...ex]), groups, known: true };
+    }
     if (ws.length === 1) {
       const w = ws[0], s = singular(w);
       const ex = uniq([...(s !== w ? [s] : []), ...syn(w)]).slice(0, 3);
@@ -76,12 +96,14 @@
       queries = uniq([primary, ...ex]);
       groups.push([{ term: w, weight: 1 }, ...ex.map((t) => ({ term: t, weight: t === s ? 0.95 : 0.8 }))]);
     } else {
+      // A synonym that is another word of the query ("wind" -> "turbine") would let a partial match win.
+      const own = (w) => syn(w).filter((t) => !ws.includes(t));
       ws.forEach((w) => {
-        const ex = syn(w).slice(0, 2);
+        const ex = own(w).slice(0, 2);
         if (ex.length) known = true;
         groups.push([{ term: w, weight: 1 }, ...ex.map((t) => ({ term: t, weight: 0.8 }))]);
       });
-      const translated = ws.map((w) => (syn(w)[0] || singular(w))).join(' ');
+      const translated = uniq(ws.map((w) => (own(w)[0] || singular(w)))).join(' ');
       queries = uniq([primary, translated]);
     }
     return { queries, groups, known };
@@ -106,6 +128,8 @@
       total += best;
     }
     let s = total / (groups.length || 1);
+    // Multi-word query: prefer names that contain every word the user typed.
+    if (groups.length > 1 && groups.every((g) => tokens.includes(g[0].term) || tokens.includes(singular(g[0].term)))) s += 20;
     if (!tokens.some((t) => VARIANT.has(t))) s += 2;
     return s - idx * 0.001;
   }
@@ -144,19 +168,42 @@
     });
   }
 
-  // Short hint for empty results.
+  function distance(a, b) {
+    const d = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      let prev = d[0];
+      d[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const tmp = d[j];
+        d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+        prev = tmp;
+      }
+    }
+    return d[b.length];
+  }
+
+  // Short hint for empty results: close spellings first (typos), then shared prefixes.
   function suggestions(q) {
     const ws = words(q);
     const out = [];
+    const keys = Object.keys(SYN);
     ws.forEach((w) => {
-      const keys = Object.keys(SYN).filter((k) => w.length >= 3 && (k.startsWith(w.slice(0, 3)) || w.startsWith(k.slice(0, 3))));
-      keys.slice(0, 2).forEach((k) => out.push(SYN[k][0]));
+      if (w.length < 3) return;
+      const close = keys.filter((k) => distance(w, k) <= (w.length > 5 ? 2 : 1));
+      close.slice(0, 2).forEach((k) => out.push(k));
+      const pre = keys.filter((k) => k.startsWith(w.slice(0, 3)) || w.startsWith(k.slice(0, 3)));
+      pre.slice(0, 2).forEach((k) => out.push(SYN[k][0]));
     });
     const list = uniq(out).slice(0, 4);
     return list.length ? list : ['factory', 'solar panel', 'arrow', 'user'];
   }
 
   const humanize = (name) => String(name).replace(/-/g, ' ');
+  // 'mdi:wind-turbine' -> 'Wind turbine'
+  const label = (full) => {
+    const h = humanize(String(full).slice(String(full).indexOf(':') + 1));
+    return h.charAt(0).toUpperCase() + h.slice(1);
+  };
 
-  return { strip, words, expandQuery, scoreIcon, mergeResults, rank, baseOf, suggestions, humanize, SYN };
+  return { strip, words, expandQuery, scoreIcon, mergeResults, rank, baseOf, suggestions, humanize, label, SYN, PHRASES };
 });

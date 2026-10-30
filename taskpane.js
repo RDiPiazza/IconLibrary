@@ -2,11 +2,12 @@ const API = 'https://api.iconify.design';
 const CURATED = 'material-symbols,mdi,lucide,tabler,ph,bi,heroicons,carbon,ri,fa6-solid';
 const PAGE = 48;      // tiles shown per "page"
 const FETCH_LIMIT = 120; // results requested from Iconify per query; ranking happens client-side
+const FALLBACK_BELOW = 12; // curated results under this count also search every single-colour set
 
 const U = window.SearchUtils;
 const $ = (id) => document.getElementById(id);
 const grid = $('grid'), statusEl = $('status'), moreBtn = $('more'), input = $('q'), setSel = $('set'), colorIn = $('color'), hideVar = $('hidevar');
-let currentKey = '', timer, results = [], shown = 0, lastMerged = [], lastGroups = [], lastNote = '', lastQuery = '';
+let currentKey = '', timer, results = [], shown = 0, lastMerged = [], lastExtra = [], lastGroups = [], lastNote = '', lastQuery = '';
 const collections = {};     // prefix -> {name, license, author}
 const iconData = new Map(); // 'prefix:name' -> {body, width, height}
 const missing = new Set();  // ids Iconify reported as not existing
@@ -42,6 +43,7 @@ async function loadIconData(fullNames) {
   await Promise.all(
     Object.entries(byPrefix).map(async ([prefix, names]) => {
       const res = await fetch(`${API}/${prefix}.json?icons=${names.join(',')}`);
+      if (res.status === 404) { names.forEach((n) => missing.add(prefix + ':' + n)); return; } // unknown icon set
       if (!res.ok) throw new Error('Icon data failed (' + res.status + ')');
       const data = await res.json();
       const dw = data.width || 16, dh = data.height || 16;
@@ -97,9 +99,21 @@ async function search() {
     if (!ok.length) throw settled[0].reason;
     ok.forEach((d) => Object.assign(collections, d.collections || {}));
     lastMerged = U.mergeResults(settled.map((s) => (s.status === 'fulfilled' ? s.value.icons || [] : [])));
+    lastExtra = [];
+    lastNote = queries.length > 1 ? `Also searched: ${queries.slice(1).join(', ')}. ` : '';
+    // Like iconify.design, fall back to every set when the curated ones have little; 'palette:false'
+    // keeps it to single-colour icons. Shown after the curated results.
+    if (sets === 'curated' && lastMerged.length < FALLBACK_BELOW) {
+      const more = await Promise.allSettled(queries.map((qq) => fetchSearch(qq + ' palette:false', '')));
+      if (key !== currentKey) return;
+      more.forEach((s) => { if (s.status === 'fulfilled') Object.assign(collections, s.value.collections || {}); });
+      const inCurated = new Set(lastMerged.map((m) => m.id));
+      lastExtra = U.mergeResults(more.map((s) => (s.status === 'fulfilled' ? s.value.icons || [] : [])))
+        .filter((m) => !inCurated.has(m.id));
+      if (lastExtra.length) lastNote += 'Few curated matches; also showing other single-colour sets. ';
+    }
     lastGroups = groups;
     lastQuery = q;
-    lastNote = queries.length > 1 ? `Also searched: ${queries.slice(1).join(', ')}. ` : '';
     await render();
   } catch (e) {
     setStatus('Search failed: ' + e.message, true);
@@ -108,7 +122,8 @@ async function search() {
 
 async function render() {
   grid.innerHTML = '';
-  results = U.rank(lastMerged, lastGroups, { hideVariants: hideVar.checked });
+  const opts = { hideVariants: hideVar.checked };
+  results = U.rank(lastMerged, lastGroups, opts).concat(U.rank(lastExtra, lastGroups, opts));
   shown = 0;
   if (!results.length) {
     setStatus(`No icons found for “${lastQuery}”. Try: ${U.suggestions(lastQuery).join(', ')}.`);
@@ -177,15 +192,14 @@ async function svgToPngBase64(svg, px = 512) {
 async function nameSelection(full) {
   try {
     if (!window.PowerPoint || !PowerPoint.run) return;
-    const { name } = splitName(full);
-    const label = U.humanize(name);
+    const label = U.label(full);
     await PowerPoint.run(async (ctx) => {
       const shapes = ctx.presentation.getSelectedShapes();
       shapes.load('items');
       await ctx.sync();
       if (shapes.items.length !== 1) return;
       const shape = shapes.items[0];
-      shape.name = 'Icon ' + label;
+      shape.name = 'Icon - ' + label;
       await ctx.sync();
       try {
         shape.altTextDescription = label + ' icon';
@@ -202,7 +216,7 @@ async function insertIcon(full, tile) {
   try {
     if (!iconData.has(full)) await loadIconData([full]); // on-demand fetch, no dependency on a prior search
     const d = iconData.get(full);
-    if (!d) throw new Error(missing.has(full) ? `Icon “${full}” does not exist.` : 'Icon data not available.');
+    if (!d) throw new Error(missing.has(full) ? `Icon “${full}” does not exist on Iconify.` : `Could not load “${full}” from Iconify. Check your connection and retry.`);
     const svg = buildSvg(d, colorIn.value, 256);
 
     // 1) SVG (recolorable). Try plain, then with an XML declaration.
