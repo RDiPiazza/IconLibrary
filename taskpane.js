@@ -1,12 +1,15 @@
 const API = 'https://api.iconify.design';
 const CURATED = 'material-symbols,mdi,lucide,tabler,ph,bi,heroicons,carbon,ri,fa6-solid';
-const PAGE = 48;
+const PAGE = 48;      // tiles shown per "page"
+const FETCH_LIMIT = 120; // results requested from Iconify per query; ranking happens client-side
 
+const U = window.SearchUtils;
 const $ = (id) => document.getElementById(id);
-const grid = $('grid'), statusEl = $('status'), moreBtn = $('more'), input = $('q'), setSel = $('set'), colorIn = $('color');
-let start = 0, total = 0, currentKey = '', timer;
-const collections = {};     // prefix -> {name, license, author} from search responses
+const grid = $('grid'), statusEl = $('status'), moreBtn = $('more'), input = $('q'), setSel = $('set'), colorIn = $('color'), hideVar = $('hidevar');
+let currentKey = '', timer, results = [], shown = 0, lastMerged = [], lastGroups = [], lastNote = '', lastQuery = '';
+const collections = {};     // prefix -> {name, license, author}
 const iconData = new Map(); // 'prefix:name' -> {body, width, height}
+const missing = new Set();  // ids Iconify reported as not existing
 
 const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
 const thumbColor = dark ? '#f0f0f0' : '#242424';
@@ -27,11 +30,12 @@ function splitName(full) {
   return { prefix: full.slice(0, i), name: full.slice(i + 1) };
 }
 
-// One request per icon set (not per icon): Iconify's bulk endpoint returns the raw icon data,
-// and the SVG is built locally. Far fewer requests, and no cross-origin image loading.
+// One request per icon set (bulk endpoint); SVGs are built locally. Fetches on demand when an id
+// isn't cached, and only reports "does not exist" when Iconify says so.
 async function loadIconData(fullNames) {
   const byPrefix = {};
   fullNames.forEach((f) => {
+    if (iconData.has(f)) return;
     const { prefix, name } = splitName(f);
     (byPrefix[prefix] = byPrefix[prefix] || []).push(name);
   });
@@ -56,6 +60,7 @@ async function loadIconData(fullNames) {
       names.forEach((n) => {
         const d = resolve(n);
         if (d) iconData.set(prefix + ':' + n, d);
+        else if ((data.not_found || []).includes(n) || !data.icons || !data.icons[n]) missing.add(prefix + ':' + n);
       });
     })
   );
@@ -67,35 +72,63 @@ function buildSvg(d, color, size) {
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${size}" viewBox="0 0 ${d.width} ${d.height}" fill="${color}">${body}</svg>`;
 }
 
-async function search(append = false) {
+async function fetchSearch(q, prefixes) {
+  const params = new URLSearchParams({ query: q, limit: String(FETCH_LIMIT) });
+  if (prefixes) params.set('prefixes', prefixes);
+  const res = await fetch(`${API}/search?${params}`);
+  if (!res.ok) throw new Error('Search failed (' + res.status + ')');
+  return res.json();
+}
+
+async function search() {
   const q = input.value.trim();
   const sets = setSel.value;
   const key = q + '|' + sets;
-  if (!q) { grid.innerHTML = ''; moreBtn.hidden = true; setStatus('Type a keyword to find icons.'); return; }
-  if (!append) { start = 0; total = 0; grid.innerHTML = ''; currentKey = key; }
+  currentKey = key;
+  grid.innerHTML = ''; results = []; shown = 0; moreBtn.hidden = true;
+  if (!q) { setStatus('Type a keyword (English or French) to find icons.'); return; }
+  const { queries, groups } = U.expandQuery(q);
+  if (!queries.length) { setStatus('Type a keyword (English or French) to find icons.'); return; }
   setStatus('Searching…');
   try {
-    const params = new URLSearchParams({ query: q, limit: String(PAGE), start: String(start) });
-    const prefixes = prefixesFor(sets);
-    if (prefixes) params.set('prefixes', prefixes);
-    const res = await fetch(`${API}/search?${params}`);
-    if (!res.ok) throw new Error('Search failed (' + res.status + ')');
-    const data = await res.json();
+    const settled = await Promise.allSettled(queries.map((qq) => fetchSearch(qq, prefixesFor(sets))));
     if (key !== currentKey) return; // a newer search replaced this one
-    Object.assign(collections, data.collections || {});
-    const icons = data.icons || [];
-    let dataError = '';
-    try { await loadIconData(icons); } catch (e) { dataError = e.message; }
-    if (key !== currentKey) return;
-    icons.forEach(addTile);
-    start += icons.length;
-    total = data.total || 0;
-    moreBtn.hidden = !(icons.length && start < total);
-    if (dataError) setStatus('Previews failed: ' + dataError, true);
-    else setStatus(grid.children.length ? 'Click an icon to insert it on the slide.' : `No icons found for “${q}”.`);
+    const ok = settled.filter((s) => s.status === 'fulfilled').map((s) => s.value);
+    if (!ok.length) throw settled[0].reason;
+    ok.forEach((d) => Object.assign(collections, d.collections || {}));
+    lastMerged = U.mergeResults(settled.map((s) => (s.status === 'fulfilled' ? s.value.icons || [] : [])));
+    lastGroups = groups;
+    lastQuery = q;
+    lastNote = queries.length > 1 ? `Also searched: ${queries.slice(1).join(', ')}. ` : '';
+    await render();
   } catch (e) {
-    setStatus(e.message, true);
+    setStatus('Search failed: ' + e.message, true);
   }
+}
+
+async function render() {
+  grid.innerHTML = '';
+  results = U.rank(lastMerged, lastGroups, { hideVariants: hideVar.checked });
+  shown = 0;
+  if (!results.length) {
+    setStatus(`No icons found for “${lastQuery}”. Try: ${U.suggestions(lastQuery).join(', ')}.`);
+    moreBtn.hidden = true;
+    return;
+  }
+  await showMore();
+}
+
+async function showMore() {
+  const key = currentKey;
+  const slice = results.slice(shown, shown + PAGE);
+  let dataError = '';
+  try { await loadIconData(slice); } catch (e) { dataError = e.message; }
+  if (key !== currentKey) return;
+  slice.forEach(addTile);
+  shown += slice.length;
+  moreBtn.hidden = shown >= results.length;
+  if (dataError) setStatus('Previews failed: ' + dataError, true);
+  else setStatus(`${lastNote}Showing ${shown} of ${results.length}. Click an icon to insert it.`);
 }
 
 function addTile(full) {
@@ -115,24 +148,87 @@ function addTile(full) {
   grid.appendChild(b);
 }
 
+function insertData(data, coercionType) {
+  return new Promise((resolve, reject) => {
+    Office.context.document.setSelectedDataAsync(data, { coercionType }, (r) => {
+      if (r.status === Office.AsyncResultStatus.Succeeded) return resolve();
+      const err = r.error || {};
+      reject(new Error((err.message || 'unknown error') + (err.code ? ' [' + err.code + ']' : '')));
+    });
+  });
+}
+
+async function svgToPngBase64(svg, px = 512) {
+  const img = new Image();
+  await new Promise((res, rej) => {
+    img.onload = res;
+    img.onerror = () => rej(new Error('could not render the SVG'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+  const ratio = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1;
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(px * ratio));
+  c.height = px;
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/png').split(',')[1];
+}
+
+// Best effort: name the inserted shape after the icon and set its alt text.
+async function nameSelection(full) {
+  try {
+    if (!window.PowerPoint || !PowerPoint.run) return;
+    const { name } = splitName(full);
+    const label = U.humanize(name);
+    await PowerPoint.run(async (ctx) => {
+      const shapes = ctx.presentation.getSelectedShapes();
+      shapes.load('items');
+      await ctx.sync();
+      if (shapes.items.length !== 1) return;
+      const shape = shapes.items[0];
+      shape.name = 'Icon ' + label;
+      await ctx.sync();
+      try {
+        shape.altTextDescription = label + ' icon';
+        await ctx.sync();
+      } catch (e) { /* alt-text API not available in this PowerPoint version */ }
+    });
+  } catch (e) { /* naming is best-effort */ }
+}
+
 async function insertIcon(full, tile) {
   const { prefix } = splitName(full);
   tile.classList.add('busy');
   setStatus('Inserting…');
   try {
-    if (!iconData.has(full)) await loadIconData([full]);
+    if (!iconData.has(full)) await loadIconData([full]); // on-demand fetch, no dependency on a prior search
     const d = iconData.get(full);
-    if (!d) throw new Error('Icon data not available.');
+    if (!d) throw new Error(missing.has(full) ? `Icon “${full}” does not exist.` : 'Icon data not available.');
     const svg = buildSvg(d, colorIn.value, 256);
-    await new Promise((resolve, reject) => {
-      Office.context.document.setSelectedDataAsync(svg, { coercionType: Office.CoercionType.XmlSvg }, (r) =>
-        r.status === Office.AsyncResultStatus.Succeeded ? resolve() : reject(new Error(r.error.message))
-      );
-    });
+
+    // 1) SVG (recolorable). Try plain, then with an XML declaration.
+    // 2) Fallback: PNG picture (not recolorable), so something always lands on the slide.
+    let mode = '', svgErr = '';
+    for (const variant of [svg, '<?xml version="1.0" encoding="UTF-8"?>' + svg]) {
+      try { await insertData(variant, Office.CoercionType.XmlSvg); mode = 'svg'; break; }
+      catch (e) { svgErr = e.message; }
+    }
+    if (!mode) {
+      try {
+        await insertData(await svgToPngBase64(svg), Office.CoercionType.Image);
+        mode = 'png';
+      } catch (e2) {
+        throw new Error('Insert failed. SVG: ' + svgErr + ' | PNG: ' + e2.message);
+      }
+    }
+    await nameSelection(full);
     const c = collections[prefix];
     const credit = c ? `${c.name}${c.license && c.license.title ? ' · ' + c.license.title : ''}` : prefix;
-    const hint = /stroke=["']#/.test(svg) ? ' Outline icon: recolor with Graphics Outline.' : '';
-    setStatus(`Inserted ${full} (${credit}).${hint}`);
+    if (mode === 'png') {
+      setStatus(`Inserted ${full} as a picture (not recolorable). SVG insert failed: ${svgErr}. Credit: ${credit}.`);
+    } else {
+      const hint = /stroke=["']#/.test(svg) ? ' Outline icon: recolor with Graphics Outline.' : '';
+      setStatus(`Inserted ${full} (${credit}).${hint}`);
+    }
   } catch (e) {
     setStatus(e.message, true);
   } finally {
@@ -141,7 +237,8 @@ async function insertIcon(full, tile) {
 }
 
 Office.onReady(() => {
-  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => search(false), 350); });
-  setSel.addEventListener('change', () => search(false));
-  moreBtn.addEventListener('click', () => search(true));
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 350); });
+  setSel.addEventListener('change', search);
+  hideVar.addEventListener('change', () => { if (lastMerged.length) render(); });
+  moreBtn.addEventListener('click', showMore);
 });
