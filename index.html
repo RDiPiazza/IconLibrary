@@ -5,21 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Iconify Icons</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <link rel="stylesheet" href="taskpane.css?v=7" />
+  <link rel="stylesheet" href="taskpane.css?v=8" />
 </head>
 <body>
   <header>
     <div class="row">
       <input id="q" type="search" placeholder="Search icons (English or French)" autocomplete="off" aria-label="Search icons" />
       <label class="color" title="Icon colour">
-        <input id="color" type="color" value="#000000" aria-label="Icon colour" />
+        <input id="color" type="color" value="#101820" aria-label="Icon colour" />
       </label>
     </div>
+    <div id="swatches" class="swatches" role="group" aria-label="Theme colours"></div>
   </header>
   <p id="status" role="status" aria-live="polite">Type a keyword to find icons.</p>
   <main id="grid"></main>
   <button id="more" hidden>Load more</button>
-  <script src="search-utils.js?v=7"></script>
-  <script src="taskpane.js?v=7"></script>
+  <script src="search-utils.js?v=8"></script>
+  <script src="taskpane.js?v=8"></script>
 </body>
 </html>

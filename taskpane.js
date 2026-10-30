@@ -2,6 +2,12 @@ const API = 'https://api.iconify.design';
 const CURATED = 'material-symbols,mdi,lucide,tabler,ph,bi,heroicons,carbon,ri,fa6-solid';
 const PAGE = 48;      // tiles shown per "page"
 const FETCH_LIMIT = 120; // results requested from Iconify per query; ranking happens client-side
+// Theme colours, primary accent first. Shown as one-click swatches under the search box.
+const BRAND = [
+  ['Blue', '#0050DB'], ['Mint', '#50E6BE'], ['Text dark', '#101820'], ['Charcoal', '#2E2E2E'],
+  ['Dark blue-grey', '#44546A'], ['Mid grey', '#ABABAB'], ['Light blue', '#CCDCF8'],
+  ['Light mint', '#A7F2DE'], ['Light grey', '#E7E6E6'], ['White', '#FFFFFF'],
+];
 const FALLBACK_BELOW = 12; // curated results under this count also search every single-colour set
 
 const U = window.SearchUtils;
@@ -243,7 +249,36 @@ async function insertIcon(full, tile) {
   }
 }
 
+function buildSwatches() {
+  const box = $('swatches');
+  const list = document.createElement('datalist'); // offered as suggestions by pickers that support it
+  list.id = 'brand-colours';
+  BRAND.forEach(([name, hex]) => {
+    const b = document.createElement('button');
+    b.className = 'swatch';
+    b.style.background = hex;
+    b.title = `${name} (${hex})`;
+    b.setAttribute('aria-label', name);
+    b.dataset.hex = hex.toLowerCase();
+    b.addEventListener('click', () => { colorIn.value = hex.toLowerCase(); markSwatch(); });
+    box.appendChild(b);
+    const o = document.createElement('option');
+    o.value = hex.toLowerCase();
+    list.appendChild(o);
+  });
+  document.body.appendChild(list);
+  colorIn.setAttribute('list', list.id);
+  colorIn.addEventListener('input', markSwatch);
+  markSwatch();
+}
+
+function markSwatch() {
+  const v = colorIn.value.toLowerCase();
+  document.querySelectorAll('.swatch').forEach((s) => s.setAttribute('aria-pressed', String(s.dataset.hex === v)));
+}
+
 Office.onReady(() => {
+  buildSwatches();
   input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 350); });
   moreBtn.addEventListener('click', showMore);
 });

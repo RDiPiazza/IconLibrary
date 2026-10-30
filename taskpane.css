@@ -12,6 +12,9 @@ input[type=search] { width: 100%; padding: 8px 10px; font: inherit; color: inher
 .row { display: flex; gap: 8px; }
 .row input[type=search] { flex: 1; min-width: 0; }
 .color input { width: 40px; height: 100%; min-height: 34px; padding: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+.swatches { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.swatch { aspect-ratio: 1; padding: 0; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+.swatch[aria-pressed=true] { outline: 2px solid var(--fg); outline-offset: 1px; }
 input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #status { margin: 4px 0 10px; color: var(--muted); font-size: 12px; min-height: 1.4em; }
 #status.error { color: #c50f1f; }
